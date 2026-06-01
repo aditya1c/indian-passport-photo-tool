@@ -1,0 +1,15 @@
+# Generated artifacts
+measured.jpeg
+report.txt
+
+# Working / personal photos (keep the repo free of personal images)
+photo.jpeg
+photo_white.jpeg
+*_passport.jpeg
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
