@@ -1,8 +1,37 @@
 import sys
 import os
-from PIL import Image
+import io
+from PIL import Image, ImageOps, ImageCms
 from whiten_bg import whiten_image, clean_speckles, feather_matte, remove_bg_ml
 from check_passport import _get_landmarks, detect_hair_top, detect_chin_skin, assess_eligibility
+
+# sRGB profile bytes — embedded on the output so viewers never have to guess.
+SRGB_PROFILE = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+
+def load_srgb(path):
+    """Open a source photo as orientation-fixed, sRGB-correct RGB.
+
+    Two silent-corruption traps this closes (both were real footguns — see
+    CLAUDE.md "Input prep"):
+      • Orientation — a portrait phone photo carries EXIF orientation 6; read
+        raw it looks ~90° head-rolled and the eligibility gate rejects it.
+        exif_transpose() bakes the rotation into the pixels.
+      • Colour — iPhone photos are tagged Display P3 (wide gamut). Reading the
+        raw numbers and dropping the profile makes a viewer assume sRGB, so warm
+        skin reds desaturate (cooler/flatter). profileToProfile() remaps the
+        numbers P3→sRGB so the *appearance* is preserved, then we drop to plain
+        sRGB. Untagged input is assumed sRGB already and passes through.
+    """
+    im = ImageOps.exif_transpose(Image.open(path))
+    icc = im.info.get("icc_profile")
+    if icc:
+        src = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+        if "sRGB" not in (ImageCms.getProfileDescription(src) or ""):
+            dst = ImageCms.createProfile("sRGB")
+            im = ImageCms.profileToProfile(im, src, dst, renderingIntent=0, outputMode="RGB")
+            print(f"[color] converted source {ImageCms.getProfileDescription(src).strip()} → sRGB")
+    return im.convert("RGB")
 
 
 def detect_face_coords(orig):
@@ -50,7 +79,7 @@ DST  = positional[1] if len(positional) > 1 else os.path.expanduser("~/Desktop/p
 
 # ── Step 1: load the original + auto-detect face coordinates ───────────────────
 print(f"Loading {SRC} ...")
-orig = Image.open(SRC).convert("RGB")
+orig = load_srgb(SRC)   # EXIF-orientation fixed + P3→sRGB if needed
 
 # ── Step 1a: eligibility gate ─────────────────────────────────────────────────
 # A tilted/turned head, a downward gaze, or closed eyes can't be fixed by
@@ -114,5 +143,5 @@ print(f"Face : {face_h/(bottom-top)*100:.1f}%  |  Shoulder room: {bottom-CHIN_BO
 final = img.crop((left, top, right, bottom)).resize((OUT_W, OUT_H), Image.LANCZOS)
 if not USE_ML:
     final = clean_speckles(final)   # remove floating non-white islands near ear/beard
-final.save(DST, dpi=(600, 600), quality=95)
-print(f"Saved → {DST}  ({OUT_W}×{OUT_H}, 600 DPI)")
+final.save(DST, dpi=(600, 600), quality=95, icc_profile=SRGB_PROFILE)
+print(f"Saved → {DST}  ({OUT_W}×{OUT_H}, 600 DPI, sRGB)")

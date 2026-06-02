@@ -54,6 +54,12 @@ crop, and resize in one step. `check_passport.py` validates and writes an annota
 
 Detects the face, removes the background to white, crops, and resizes to 630×810.
 
+Every source is loaded through `load_srgb()`, which **fixes EXIF orientation**
+(a portrait phone photo would otherwise read as a ~90° head roll and get rejected)
+and **converts wide-gamut Display P3 → sRGB** (iPhone default), so warm skin tones
+don't desaturate. The output is saved **tagged sRGB**. You no longer have to
+pre-convert the photo — just feed it the raw smartphone JPEG.
+
 ```bash
 python3 make_passport.py                 # defaults: ~/Desktop/photo.jpeg → ~/Desktop/photo_passport.jpeg
 python3 make_passport.py SRC DST         # custom input/output paths (positional)
@@ -115,6 +121,13 @@ Outputs: a console report, `measured.jpeg` (red hair/chin lines + percentage), a
   bottom — including the beard overstates face height by ~8 points for bearded subjects.
   The detector crosses the beard from the chin landmark and stops at the first pure-skin
   row above it; on a clean-shaven face (no beard to cross) it uses the chin landmark directly.
+- **Colour & orientation are auto-handled.** `make_passport.py` runs each source
+  through `load_srgb()`: `ImageOps.exif_transpose()` bakes in the EXIF rotation, and a
+  non-sRGB profile (e.g. iPhone Display P3) is converted to sRGB via
+  `ImageCms.profileToProfile`, with the output re-tagged sRGB. This prevents two silent
+  bugs — a portrait photo read as 90° roll, and warm skin reads as cool/flat when a P3
+  file is misread as sRGB. (Roll from a *real* head tilt is still a manual pre-step; see
+  `CLAUDE.md`.)
 - **Skin tone.** Background removal never recolors the subject. The skin-tone check
   samples fixed fractional regions, so comparing a tight passport crop to a full-body
   original can inflate the reported distance; sampling the same anatomical spots shows

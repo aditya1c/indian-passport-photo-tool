@@ -3,8 +3,7 @@ measured.jpeg
 report.txt
 
 # Working / personal photos (keep the repo free of personal images)
-photo.jpeg
-photo_white.jpeg
+photo*
 *_passport.jpeg
 
 # Python
