@@ -6,6 +6,13 @@ report.txt
 photo*
 *_passport.jpeg
 
+# Image files (keep the repo free of personal images)
+*.jpg
+*.jpeg
+*.png
+*.HEIC
+*.heic
+
 # Python
 __pycache__/
 *.pyc

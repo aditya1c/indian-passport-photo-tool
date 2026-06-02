@@ -1,7 +1,7 @@
 import sys
 import os
 import io
-from PIL import Image, ImageOps, ImageCms
+from PIL import Image, ImageOps, ImageCms, ImageDraw
 from whiten_bg import whiten_image, clean_speckles, feather_matte, remove_bg_ml
 from check_passport import _get_landmarks, detect_hair_top, detect_chin_skin, assess_eligibility
 
@@ -55,6 +55,43 @@ def detect_face_coords(orig):
         raise RuntimeError("Could not detect hair top / chin skin in source photo.")
     face_cx = int((lm[234].x + lm[454].x) / 2 * W)
     return hair_top, chin_bot, face_cx
+
+
+# ── 6-up print collage ─────────────────────────────────────────────────────────
+COLLAGE_COLS, COLLAGE_ROWS = 2, 3
+COLLAGE_GUIDE = (200, 200, 200)   # light-gray 1px cut guides around each photo
+
+
+def make_collage(photo, dst):
+    """Tile 6 copies of the 630×810 passport photo onto a 4×6 inch print sheet.
+
+    Each cell is the photo at its native size, which is exactly 35×45 mm at
+    18 px/mm (the Indian *physical* passport size) — so the photo drops in
+    pixel-for-pixel with no resampling, and the sheet comes out 1829×2743 px =
+    4.00×6.00 inch at 457 DPI. Thin gray guides frame each photo for cutting.
+    Print at 100% / actual size (never "fit to page") or the cut size drifts.
+    """
+    cw, ch = photo.size
+    pxmm    = cw / 35.0                          # 18 px/mm (photo is 35 mm wide)
+    sheet_w = round(101.6 * pxmm)                # 4 inch
+    sheet_h = round(152.4 * pxmm)                # 6 inch
+    dpi     = round(pxmm * 25.4)                 # 457
+    # Distribute leftover space as equal gutters (incl. outer margins), centered.
+    gx = (sheet_w - COLLAGE_COLS * cw) // (COLLAGE_COLS + 1)
+    gy = (sheet_h - COLLAGE_ROWS * ch) // (COLLAGE_ROWS + 1)
+    ox = (sheet_w - (COLLAGE_COLS * cw + (COLLAGE_COLS + 1) * gx)) // 2
+    oy = (sheet_h - (COLLAGE_ROWS * ch + (COLLAGE_ROWS + 1) * gy)) // 2
+
+    sheet = Image.new("RGB", (sheet_w, sheet_h), "white")
+    draw  = ImageDraw.Draw(sheet)
+    for r in range(COLLAGE_ROWS):
+        for c in range(COLLAGE_COLS):
+            x = ox + gx + c * (cw + gx)
+            y = oy + gy + r * (ch + gy)
+            sheet.paste(photo, (x, y))
+            draw.rectangle([x - 1, y - 1, x + cw, y + ch], outline=COLLAGE_GUIDE, width=1)
+    sheet.save(dst, dpi=(dpi, dpi), quality=95, icc_profile=SRGB_PROFILE)
+    return dst, sheet.size, dpi
 
 # ── Target output ─────────────────────────────────────────────────────────────
 OUT_W, OUT_H = 630, 810
@@ -145,3 +182,9 @@ if not USE_ML:
     final = clean_speckles(final)   # remove floating non-white islands near ear/beard
 final.save(DST, dpi=(600, 600), quality=95, icc_profile=SRGB_PROFILE)
 print(f"Saved → {DST}  ({OUT_W}×{OUT_H}, 600 DPI, sRGB)")
+
+# ── Step 5: 6-up print collage (always emitted alongside the photo) ───────────
+collage_dst = "{}_collage_4x6{}".format(*os.path.splitext(DST))
+cdst, (cw, ch), cdpi = make_collage(final, collage_dst)
+print(f"Saved → {cdst}  ({cw}×{ch}, {cdpi} DPI, 6×[35×45mm], sRGB)")
+print("  Print at 100% / actual size — do NOT 'fit to page' or the cut size drifts.")

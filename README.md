@@ -2,7 +2,8 @@
 
 Python scripts to generate and validate a passport-compliant photo from a regular
 smartphone image. Targets the **Indian passport** spec — **630×810 px @ 600 DPI,
-white background, face ≥80%** (tweak the constants for other countries).
+white background, face ≥80%** (tweak the constants for other countries). Every run
+also emits a **6-up 4×6 inch print sheet** so you can print and cut six copies at once.
 
 **Indian passport formats.** The current **digital** requirement (Passport Seva
 online upload) is **630×810 px**. The **physical/printed** photo is **35 mm ×
@@ -38,8 +39,12 @@ use the defaults):
 
 ```bash
 python3 make_passport.py photo.jpeg photo_passport.jpeg     # 630×810, 600 DPI
+                                                            #  + photo_passport_collage_4x6.jpeg
 python3 check_passport.py photo_passport.jpeg --original photo.jpeg
 ```
+
+Each run writes **two** files: the single passport photo (`DST`) and a 6-up print
+sheet (`DST` with a `_collage_4x6` suffix) — see below.
 
 Paths are relative/positional — nothing absolute is baked in, so the repo works
 as-is for anyone who clones it.
@@ -74,6 +79,16 @@ is given. Tunables at the top of the file: `OUT_W`/`OUT_H` (output size),
 head, default 0.10). The crop anchors `HAIR_TOP`/`CHIN_BOT`/`FACE_CX` are
 auto-detected per photo — nothing to edit. If no face is detected, it raises a
 clear error instead of producing a bad crop.
+
+**Print collage (always emitted).** After saving the passport photo, the script
+calls `make_collage()` and writes a second file next to it — `DST` with a
+`_collage_4x6` suffix (e.g. `photo_passport_collage_4x6.jpeg`). It tiles **6
+copies** in a 2×3 grid on a **4×6 inch sheet at 457 DPI** (1829×2743 px). Each
+copy is the photo at its **native 35×45 mm** physical passport size — placed
+pixel-for-pixel with **no resampling** — and framed with thin gray cut guides.
+This step is not optional and has no flag: every successful generate produces the
+sheet. **Print it at 100% / actual size (never "fit to page")** or the cut size
+drifts off 35×45 mm.
 
 ### `whiten_bg.py` — background removal (used internally; also standalone)
 

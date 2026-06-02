@@ -9,7 +9,7 @@ dependency-free Pillow flood-fill if rembg/onnxruntime aren't installed.
 ```
 passport-photo-tool/
 ├── whiten_bg.py       # bg removal: rembg matte (remove_bg_ml) + Pillow fallback (whiten/feather/clean)
-├── make_passport.py   # load_srgb (EXIF + P3→sRGB) → auto-detect face → crop → resize to 630×810 @ 600 DPI, save sRGB (bg removal internal)
+├── make_passport.py   # load_srgb (EXIF + P3→sRGB) → auto-detect face → crop → resize to 630×810 @ 600 DPI, save sRGB (bg removal internal); also make_collage → 6-up 4×6" print sheet
 ├── check_passport.py  # compliance checker → measured.jpeg + report.txt
 └── README.md / CLAUDE.md / .gitignore
 ```
@@ -17,6 +17,8 @@ passport-photo-tool/
 Working files live on the Desktop, not in this folder:
 - `photo.jpeg` — source smartphone photo (never modified)
 - `photo_passport.jpeg` — final output of `make_passport.py`
+- `photo_passport_collage_4x6.jpeg` — 6-up print sheet, always emitted next to the
+  output (`DST` + `_collage_4x6` suffix)
 - `measured.jpeg` — annotated hair/chin markers from `check_passport.py` (gitignored)
 - `report.txt` — key=value check summary (gitignored)
 - `photo_white.jpeg` — only from running `whiten_bg.py` standalone; unused by the pipeline
@@ -123,8 +125,32 @@ photo detects ~424 / 2265 / 1522.)
 - LANCZOS resize.
 
 Pipeline (`load_srgb` runs first, then): **default** `remove_bg_ml` → crop →
-resize → save (sRGB-tagged).
-**`--no-ml`** `whiten_image` → `feather_matte` → crop → resize → `clean_speckles` → save (sRGB-tagged).
+resize → save (sRGB-tagged) → `make_collage`.
+**`--no-ml`** `whiten_image` → `feather_matte` → crop → resize → `clean_speckles` → save (sRGB-tagged) → `make_collage`.
+
+## Print collage (`make_collage`, always emitted)
+
+After the single photo is saved, `make_passport.py` **always** writes a second
+file — the output path with a `_collage_4x6` suffix (e.g.
+`photo_passport_collage_4x6.jpeg`). This is **not optional and has no flag**: every
+successful generate produces it, so "make a passport photo" always yields both the
+single and the print sheet. If the collage step fails it raises (loud), rather than
+silently skipping — the passport photo is already on disk by then.
+
+Layout: **6 copies, 2 cols × 3 rows**, on a **4×6 inch sheet at 457 DPI**
+(1829×2743 px). Each cell is the 630×810 photo at its **native 35×45 mm** physical
+passport size (630 px / 35 mm = 18 px/mm), so the photo is `paste`d in
+**pixel-for-pixel with no resampling** and the sheet is sized to fit it (not the
+other way round). The leftover space is distributed as equal gutters/margins and
+the grid is centered; each photo gets a thin 1px light-gray (`COLLAGE_GUIDE`) cut
+guide. The sheet is saved sRGB-tagged at its 457 DPI.
+
+> The 600 DPI tag on the single photo is the **digital-upload** spec, not a print
+> size — printing it at 600 DPI would give 26.7×34.3 mm, smaller than passport
+> size. The collage instead pins each copy to the true 35×45 mm. **Print the sheet
+> at 100% / actual size — never "fit to page"** or the cut size drifts. Constants:
+> `COLLAGE_COLS`/`COLLAGE_ROWS`/`COLLAGE_GUIDE` (the 35 mm width is the Indian
+> physical spec; change it alongside `OUT_W`/`OUT_H` for other countries).
 
 ## Background removal (`whiten_bg.py`)
 
@@ -213,6 +239,7 @@ needs to know exactly what touched their pixels. For each run, surface:
   resulting **face %**;
 - the **background-removal path** taken (rembg matte vs Pillow fallback);
 - the **output** written (path, size, DPI, colour profile);
+- the **print collage** written (path, sheet size/DPI, 6×35×45mm, print-at-100% reminder);
 - anything **skipped, assumed, or left unfixed** (e.g. yaw not corrected, a check
   not run) — call it out explicitly rather than letting it pass silently.
 
