@@ -101,15 +101,18 @@ HEADROOM     = 0.10   # fraction of extra vertical space placed above hair
                       #  doesn't change crop height, so face % is unaffected)
 
 # ── Args ──────────────────────────────────────────────────────────────────────
-#   make_passport.py [SRC] [DST] [--no-ml] [--force]
+#   make_passport.py [SRC] [DST] [--no-ml] [--force] [--no-level]
 #   ML (rembg / U²-Net) matte is the DEFAULT; it silently falls back to the
 #   Pillow flood-fill path if rembg/onnxruntime aren't installed.
-#   --no-ml : force the Pillow flood-fill path.  (--ml is accepted as a no-op.)
-#   --force : generate even if the photo fails the eligibility (pose) gate.
+#   --no-ml    : force the Pillow flood-fill path.  (--ml is accepted as a no-op.)
+#   --force    : generate even if the photo fails the eligibility (pose) gate.
+#   --no-level : skip the automatic roll-leveling (keep the source's head tilt).
 positional = [a for a in sys.argv[1:] if not a.startswith("--")]
 flags      = {a for a in sys.argv[1:] if a.startswith("--")}
 USE_ML     = "--no-ml" not in flags
 FORCE      = "--force" in flags
+AUTO_LEVEL = "--no-level" not in flags
+ROLL_EPS   = 0.5   # don't rotate for sub-0.5° roll (resampling loss > the gain)
 
 SRC  = positional[0] if len(positional) > 0 else os.path.expanduser("~/Desktop/photo.jpeg")
 DST  = positional[1] if len(positional) > 1 else os.path.expanduser("~/Desktop/photo_passport.jpeg")
@@ -118,13 +121,25 @@ DST  = positional[1] if len(positional) > 1 else os.path.expanduser("~/Desktop/p
 print(f"Loading {SRC} ...")
 orig = load_srgb(SRC)   # EXIF-orientation fixed + P3→sRGB if needed
 
-# ── Step 1a: eligibility gate ─────────────────────────────────────────────────
-# A tilted/turned head, a downward gaze, or closed eyes can't be fixed by
+# ── Step 1a: eligibility gate + auto-level roll ───────────────────────────────
+# A turned head (yaw), a downward gaze (pitch), or closed eyes can't be fixed by
 # cropping, so refuse rather than emit a non-compliant photo. --force overrides.
+# Roll, however, is *in-plane* tilt and CAN be honestly zeroed by rotating the
+# source — so by default we auto-level it to 0 (rotate the source by -roll, white
+# fill) and re-measure before gating. --no-level keeps the source's tilt.
 print("Checking eligibility (head pose, eyes)...")
 elig = assess_eligibility(orig)
 if elig["pitch"] is not None:
     print(f"  Pose: pitch={elig['pitch']:+.0f}°  yaw={elig['yaw']:+.0f}°  roll={elig['roll']:+.0f}°")
+
+if AUTO_LEVEL and elig["roll"] is not None and abs(elig["roll"]) >= ROLL_EPS:
+    roll0 = elig["roll"]
+    orig = orig.rotate(-roll0, resample=Image.BICUBIC, fillcolor=(255, 255, 255))
+    print(f"[level] rotated source {-roll0:+.1f}° to zero the {roll0:+.1f}° head roll")
+    elig = assess_eligibility(orig)
+    if elig["pitch"] is not None:
+        print(f"  Pose (leveled): pitch={elig['pitch']:+.0f}°  yaw={elig['yaw']:+.0f}°  roll={elig['roll']:+.0f}°")
+
 if not elig["eligible"]:
     print("\n✗ This photo is NOT passport-eligible:")
     for msg in elig["issues"]:

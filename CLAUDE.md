@@ -47,6 +47,7 @@ python3 make_passport.py                  # generate (rembg; auto-falls back to 
 python3 make_passport.py --no-ml          # force the Pillow flood-fill path
 python3 make_passport.py SRC DST          # override input/output paths (positional)
 python3 make_passport.py SRC DST --force  # generate even if the eligibility gate fails
+python3 make_passport.py SRC DST --no-level # keep the source head tilt (skip auto roll-leveling)
 python3 check_passport.py photo_passport.jpeg --original photo.jpeg
 ```
 
@@ -76,15 +77,18 @@ Thresholds are lenient enough that a good frontal photo passes (the sample
 photo reads ~0°/−2°/−3°) but a candid selfie is caught (e.g. a turned-head
 kitchen photo reads yaw ≈ 14° and is rejected).
 
-**Correcting roll to 0.** Roll is *in-plane* tilt, so it can be honestly
-zeroed by rotating the **source** photo before generating (yaw/pitch can't —
-they're out-of-plane and would need to fabricate unseen face). Rotate the
-EXIF-transposed source by the negative of the measured roll (`im.rotate(+3,
-resample=BICUBIC, fillcolor=(255,255,255))` countered a −3° roll on the sample),
-re-measure with `assess_eligibility()` to confirm roll ≈ 0 and yaw/pitch are
-unchanged, save the leveled image (e.g. `photo_level.jpeg`), then run
-`make_passport.py photo_level.jpeg ...` on it. Don't try to "fix" yaw/pitch —
-within the ±8° gate they're acceptable; a real frontal pose needs a re-shoot.
+**Roll is auto-leveled to 0 (default).** Roll is *in-plane* tilt, so it can be
+honestly zeroed by rotating the **source** photo before generating (yaw/pitch
+can't — they're out-of-plane and would need to fabricate unseen face).
+`make_passport.py` does this automatically: right after `load_srgb`, if the
+measured roll is ≥0.5° (`ROLL_EPS`), it rotates the EXIF-transposed source by the
+negative of the measured roll (`orig.rotate(-roll, resample=BICUBIC,
+fillcolor=(255,255,255))` — white fill, since the bg is removed anyway), then
+re-runs `assess_eligibility()` so the gate decision and face detection both use
+the leveled image (prints `[level] rotated source …`). Pass **`--no-level`** to
+keep the source's tilt (e.g. for debugging or a deliberately uncorrected photo).
+Don't try to "fix" yaw/pitch — within the ±8° gate they're acceptable; a real
+frontal pose needs a re-shoot.
 
 **Not auto-detected** — still need a human eye: tinted/reflective glasses or
 glare, lighting evenness/shadows, neutral expression (mouth closed), hair over
@@ -219,12 +223,12 @@ input is assumed already-sRGB and passes through untouched.
 Without it, a portrait phone photo stored with orientation tag 6 reads as a ~90°
 head **roll** and the eligibility gate rejects a perfectly good photo.
 
-**Still manual: roll.** A small *real* head tilt (not the EXIF kind) is in-plane,
-so it's correctable — but the pipeline does **not** auto-level it (see "Correcting
-roll to 0" under the Eligibility gate). If you roll-correct by hand, keep the
-profile intact: convert/rotate/save as **sRGB-tagged** (or `load_srgb()` will see
-no profile, assume sRGB, and the conversion is skipped — fine *only* if the file
-is genuinely already sRGB).
+**Roll (auto-leveled).** A small *real* head tilt (not the EXIF kind) is in-plane,
+so it's correctable — and the pipeline now **auto-levels it to 0** by default
+(rotate source by -roll right after `load_srgb`; see "Roll is auto-leveled to 0"
+under the Eligibility gate). Because the rotation happens on the already
+EXIF-fixed, sRGB-converted in-memory image, the profile is preserved automatically.
+Pass `--no-level` to keep the source's tilt.
 
 ## Working agreement — narrate every operation
 
@@ -233,8 +237,8 @@ image**, not just the final result. Photo edits are silent and lossy, so the use
 needs to know exactly what touched their pixels. For each run, surface:
 
 - the source loaded and any **auto-corrections** applied (`[color]` P3→sRGB,
-  EXIF orientation fix);
-- any **manual pre-steps** (e.g. a +N° roll rotation, with the angle and why);
+  EXIF orientation fix, `[level]` roll auto-leveled to 0 with the angle);
+- any **manual pre-steps or overrides** (e.g. `--no-level` to keep a tilt);
 - the **detected anchors** (HAIR_TOP / CHIN_BOT / FACE_CX), crop box, and
   resulting **face %**;
 - the **background-removal path** taken (rembg matte vs Pillow fallback);

@@ -70,6 +70,7 @@ python3 make_passport.py                 # defaults: ~/Desktop/photo.jpeg → ~/
 python3 make_passport.py SRC DST         # custom input/output paths (positional)
 python3 make_passport.py --no-ml         # force the Pillow flood-fill (skip rembg)
 python3 make_passport.py SRC DST --force # generate even if the eligibility gate fails
+python3 make_passport.py SRC DST --no-level # keep the source head tilt (skip auto roll-leveling)
 ```
 
 It first runs the **eligibility check** (head pose + eyes). If the pose isn't
@@ -141,8 +142,12 @@ Outputs: a console report, `measured.jpeg` (red hair/chin lines + percentage), a
   non-sRGB profile (e.g. iPhone Display P3) is converted to sRGB via
   `ImageCms.profileToProfile`, with the output re-tagged sRGB. This prevents two silent
   bugs — a portrait photo read as 90° roll, and warm skin reads as cool/flat when a P3
-  file is misread as sRGB. (Roll from a *real* head tilt is still a manual pre-step; see
-  `CLAUDE.md`.)
+  file is misread as sRGB.
+- **Roll is auto-leveled.** A *real* in-plane head tilt is zeroed automatically:
+  after loading, `make_passport.py` measures roll and, if it's ≥0.5°, rotates the
+  source by `-roll` (white fill) and re-measures before cropping — so the head comes
+  out level. Pass `--no-level` to keep the original tilt. (Yaw/pitch are out-of-plane
+  and can't be corrected this way; see `CLAUDE.md`.)
 - **Skin tone.** Background removal never recolors the subject. The skin-tone check
   samples fixed fractional regions, so comparing a tight passport crop to a full-body
   original can inflate the reported distance; sampling the same anatomical spots shows
